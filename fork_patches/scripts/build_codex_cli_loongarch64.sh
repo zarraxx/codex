@@ -87,8 +87,11 @@ if [[ "$TOOLCHAIN_KIND" == "llvm" ]]; then
   mkdir -p "$TOOLCHAIN_ROOT/sysroot"
   mkdir -p "$ACTIVE_SYSROOT/lib" "$ACTIVE_SYSROOT/usr/lib"
   ln -sfn "$ACTIVE_SYSROOT" "$TOOLCHAIN_ROOT/sysroot/$TARGET"
+  if [[ ! -e "$ACTIVE_SYSROOT/lib64" ]]; then
+    ln -sfn usr/lib64 "$ACTIVE_SYSROOT/lib64"
+  fi
   if [[ ! -e "$ACTIVE_SYSROOT/lib/loongarch64-linux-gnu" ]]; then
-    ln -sfn ../lib64 "$ACTIVE_SYSROOT/lib/loongarch64-linux-gnu"
+    ln -sfn ../usr/lib/loongarch64-linux-gnu "$ACTIVE_SYSROOT/lib/loongarch64-linux-gnu"
   fi
   if [[ ! -e "$ACTIVE_SYSROOT/usr/lib/loongarch64-linux-gnu" ]]; then
     ln -sfn ../lib64 "$ACTIVE_SYSROOT/usr/lib/loongarch64-linux-gnu"
