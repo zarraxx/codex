@@ -107,7 +107,8 @@ jobs:
         run: |
           set -euo pipefail
           sysroot_dir="${RUNNER_TEMP}/debian13-loong64-sysroot"
-          SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
+          sudo env SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
+          sudo chown -R "$(id -u):$(id -g)" "${sysroot_dir}"
           echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
 
       - name: Cross-build codex-cli

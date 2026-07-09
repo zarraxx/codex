@@ -1,9 +1,9 @@
 diff --git a/.github/workflows/loongarch64-release.yml b/.github/workflows/loongarch64-release.yml
 new file mode 100644
-index 000000000..67f02ad92
+index 000000000..5f1205884
 --- /dev/null
 +++ b/.github/workflows/loongarch64-release.yml
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,251 @@
 +name: loongarch64-release
 +
 +on:
@@ -113,7 +113,8 @@ index 000000000..67f02ad92
 +        run: |
 +          set -euo pipefail
 +          sysroot_dir="${RUNNER_TEMP}/debian13-loong64-sysroot"
-+          SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
++          sudo env SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
++          sudo chown -R "$(id -u):$(id -g)" "${sysroot_dir}"
 +          echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
 +
 +      - name: Cross-build codex-cli
