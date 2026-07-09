@@ -16,7 +16,8 @@ Current contents:
   `compiler-rt`, `libunwind`, `libc++`, and `libc++abi` instead of `libgcc`.
 - `scripts/package_codex_cli_loongarch64.sh`
   Stages the built `codex` binary with its LLVM runtime libraries,
-  applies an `rpath` with `patchelf`, and emits a `.tar.xz` bundle.
+  applies an `rpath` with `patchelf`, strips release binaries by default, and
+  emits a `.tar.xz` bundle.
 - `scripts/smoke_test_codex_cli_loongarch64_container.sh`
   Launches the packaged `codex` bundle inside
   `ghcr.io/zarraxx/debian:trixie` under LoongArch64 emulation and verifies
@@ -48,6 +49,8 @@ Examples:
   `PROFILE=release fork_patches/scripts/build_codex_cli_loongarch64.sh`
 - Package a release build:
   `PROFILE=release PATCHELF_BIN=/path/to/patchelf fork_patches/scripts/package_codex_cli_loongarch64.sh`
+- Override stripping behavior when packaging:
+  `STRIP_MODE=none|debug|unneeded fork_patches/scripts/package_codex_cli_loongarch64.sh`
 - Smoke-test a packaged release bundle in the Debian 13 container:
   `ARCHIVE_PATH=/path/to/codex-loongarch64-unknown-linux-gnu-release.tar.xz fork_patches/scripts/smoke_test_codex_cli_loongarch64_container.sh`
 

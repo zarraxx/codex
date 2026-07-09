@@ -13,6 +13,8 @@ BIN_NAME=${BIN_NAME:-codex}
 TARGET_BIN=${TARGET_BIN:-"$CODEX_RS_DIR/target/$TARGET/$PROFILE/$BIN_NAME"}
 LLVM_RUNTIME_DIR=${LLVM_RUNTIME_DIR:-"$LLVM_TOOLCHAIN_ROOT/lib/$TARGET"}
 ARCHIVE_PATH=${ARCHIVE_PATH:-"$REPO_ROOT/fork_patches/dist/codex-$TARGET-$PROFILE.tar.xz"}
+STRIP_MODE=${STRIP_MODE:-auto}
+STRIP_BIN=${STRIP_BIN:-"$LLVM_TOOLCHAIN_ROOT/bin/$TARGET-strip"}
 
 copy_runtime_libs() {
   local source_dir=$1
@@ -24,6 +26,27 @@ copy_runtime_libs() {
     find "$dest_dir" -maxdepth 1 -name "$pattern" -exec rm -f {} +
     find "$source_dir" -maxdepth 1 -name "$pattern" -exec cp -aP {} "$dest_dir/" \;
   done
+}
+
+strip_binary() {
+  local binary_path=$1
+  local strip_mode=$2
+
+  case "$strip_mode" in
+    none)
+      return 0
+      ;;
+    debug)
+      "$STRIP_BIN" --strip-debug "$binary_path"
+      ;;
+    unneeded)
+      "$STRIP_BIN" --strip-unneeded "$binary_path"
+      ;;
+    *)
+      echo "unsupported STRIP_MODE: $strip_mode" >&2
+      exit 1
+      ;;
+  esac
 }
 
 if [[ ! -x "$TARGET_BIN" ]]; then
@@ -38,11 +61,23 @@ if ! command -v "$PATCHELF_BIN" >/dev/null 2>&1; then
   echo "missing patchelf: $PATCHELF_BIN" >&2
   exit 1
 fi
+if [[ "$STRIP_MODE" == "auto" ]]; then
+  if [[ "$PROFILE" == "release" ]]; then
+    STRIP_MODE=unneeded
+  else
+    STRIP_MODE=none
+  fi
+fi
+if [[ "$STRIP_MODE" != "none" && ! -x "$STRIP_BIN" ]]; then
+  echo "missing strip tool: $STRIP_BIN" >&2
+  exit 1
+fi
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR/bin" "$DIST_DIR/lib"
 
 install -m 755 "$TARGET_BIN" "$DIST_DIR/bin/$BIN_NAME"
+strip_binary "$DIST_DIR/bin/$BIN_NAME" "$STRIP_MODE"
 copy_runtime_libs \
   "$LLVM_RUNTIME_DIR" \
   "$DIST_DIR/lib" \
@@ -58,5 +93,6 @@ mkdir -p "$(dirname -- "$ARCHIVE_PATH")"
 tar -C "$(dirname -- "$DIST_DIR")" -cJf "$ARCHIVE_PATH" "$(basename -- "$DIST_DIR")"
 
 echo "packaged binary: $DIST_DIR/bin/$BIN_NAME"
+echo "strip mode: $STRIP_MODE"
 echo "runtime libs dir: $DIST_DIR/lib"
 echo "archive: $ARCHIVE_PATH"
