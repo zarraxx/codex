@@ -1,0 +1,250 @@
+name: loongarch64-release
+
+on:
+  push:
+    tags:
+      - "rust-loongarch64-v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}::${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  LLVM_TOOLCHAIN_URL: https://github.com/zarraxx/develop_suit/releases/download/clang-22.1.8/clang-22.1.8-x86_64-unknown-linux-gnu.tar.xz
+  RUSTY_V8_MIRROR: https://github.com/zarraxx/rusty_v8/releases/download
+  TARGET: loongarch64-unknown-linux-gnu
+
+jobs:
+  resolve-context:
+    runs-on: ubuntu-latest
+    outputs:
+      git_ref: ${{ steps.context.outputs.git_ref }}
+      release_tag: ${{ steps.context.outputs.release_tag }}
+      release_name: ${{ steps.context.outputs.release_name }}
+      publish_release: ${{ steps.context.outputs.publish_release }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve build context
+        id: context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git_ref="${GITHUB_SHA}"
+          publish_release=false
+          release_tag=""
+
+          release_tag="$(git describe --tags --exact-match 2>/dev/null | grep '^rust-loongarch64-v' | head -n 1 || true)"
+          if [[ -n "${release_tag}" ]]; then
+            publish_release=true
+            tag_ver="${release_tag#rust-loongarch64-v}"
+            cargo_ver="$(grep -m1 '^version' codex-rs/Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+            if [[ "${tag_ver}" != "${cargo_ver}" ]]; then
+              echo "tag ${tag_ver} does not match codex-rs/Cargo.toml version ${cargo_ver}" >&2
+              exit 1
+            fi
+          fi
+
+          release_name="manual-loongarch64-build"
+          if [[ -n "${release_tag}" ]]; then
+            release_name="${release_tag#rust-loongarch64-v} loongarch64"
+          fi
+
+          echo "git_ref=${git_ref}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
+          echo "publish_release=${publish_release}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve-context
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.resolve-context.outputs.git_ref }}
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            curl \
+            mmdebstrap \
+            patchelf \
+            xz-utils
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          targets: loongarch64-unknown-linux-gnu
+
+      - name: Download LLVM toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="${RUNNER_TEMP}/clang-22.1.8-x86_64-unknown-linux-gnu.tar.xz"
+          extract_root="${RUNNER_TEMP}/llvm-toolchain"
+          mkdir -p "${extract_root}"
+          curl -fsSL "${LLVM_TOOLCHAIN_URL}" -o "${archive_path}"
+          tar -C "${extract_root}" -xf "${archive_path}"
+          toolchain_root="$(find "${extract_root}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          echo "LLVM_TOOLCHAIN_ROOT=${toolchain_root}" >> "$GITHUB_ENV"
+
+      - name: Prepare Debian 13 LoongArch64 sysroot
+        shell: bash
+        run: |
+          set -euo pipefail
+          sysroot_dir="${RUNNER_TEMP}/debian13-loong64-sysroot"
+          SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
+          echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
+
+      - name: Cross-build codex-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_log="${RUNNER_TEMP}/codex-loongarch64-release.log"
+          PROFILE=release \
+          LLVM_TOOLCHAIN_ROOT="${LLVM_TOOLCHAIN_ROOT}" \
+          SYSROOT="${SYSROOT}" \
+          OPENSSL_SYSROOT="${SYSROOT}" \
+          RUSTY_V8_MIRROR="${RUSTY_V8_MIRROR}" \
+          BUILD_LOG="${build_log}" \
+          fork_patches/scripts/build_codex_cli_loongarch64.sh
+          echo "BUILD_LOG=${build_log}" >> "$GITHUB_ENV"
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          archive_path="${RUNNER_TEMP}/codex-${TARGET}-release.tar.xz"
+          PROFILE=release \
+          LLVM_TOOLCHAIN_ROOT="${LLVM_TOOLCHAIN_ROOT}" \
+          PATCHELF_BIN=patchelf \
+          ARCHIVE_PATH="${archive_path}" \
+          DIST_DIR="${RUNNER_TEMP}/codex-${TARGET}-release" \
+          fork_patches/scripts/package_codex_cli_loongarch64.sh
+          sha256sum "${archive_path}" > "${archive_path}.sha256"
+          cp "${archive_path}" dist/
+          cp "${archive_path}.sha256" dist/
+          cp "${BUILD_LOG}" dist/
+
+      - name: Upload LoongArch64 artifacts
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: loongarch64-release-artifacts
+          path: dist/*
+          if-no-files-found: error
+
+  smoke-test:
+    needs:
+      - resolve-context
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.resolve-context.outputs.git_ref }}
+
+      - name: Enable LoongArch64 QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: loong64
+
+      - name: Download LoongArch64 artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: loongarch64-release-artifacts
+          path: dist
+
+      - name: Smoke-test codex-cli in Debian trixie container
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="$(find dist -maxdepth 1 -name 'codex-loongarch64-unknown-linux-gnu-release.tar.xz' | head -n 1)"
+          if [[ -z "${archive_path}" ]]; then
+            echo "missing LoongArch64 release archive in dist/" >&2
+            exit 1
+          fi
+
+          CONTAINER_ENGINE=docker \
+          ARCHIVE_PATH="${archive_path}" \
+          fork_patches/scripts/smoke_test_codex_cli_loongarch64_container.sh
+
+  publish-release:
+    needs:
+      - resolve-context
+      - build
+      - smoke-test
+    if: ${{ needs.resolve-context.outputs.publish_release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.resolve-context.outputs.git_ref }}
+
+      - name: Download LoongArch64 artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: loongarch64-release-artifacts
+          path: dist
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          notes_path="${RUNNER_TEMP}/release-notes.md"
+          commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          git log -1 --format=%B "${commit}" > "${notes_path}"
+          {
+            printf '\n## LoongArch64 (Debian 13)\n\n'
+            printf '%s\n' \
+              'This release adds `codex-loongarch64-unknown-linux-gnu-release.tar.xz`, built' \
+              'with LLVM 22.1.8 and a Debian 13 (Trixie) LoongArch64 sysroot.'
+            printf '\nRuntime notes:\n'
+            printf '%s\n' \
+              '- `libc++.so.1`, `libc++abi.so.1`, and `libunwind.so.1` are bundled.' \
+              '- OpenSSL is expected from the target system.'
+            printf '\nInstall on Debian 13:\n'
+            printf '%s\n' \
+              '```bash' \
+              'sudo apt update' \
+              'sudo apt install -y ca-certificates libssl3t64' \
+              'tar -xf codex-loongarch64-unknown-linux-gnu-release.tar.xz' \
+              './codex-loongarch64-unknown-linux-gnu-release/bin/codex' \
+              '```'
+          } >> "${notes_path}"
+
+      - name: Upload LoongArch64 assets to GitHub release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          name: ${{ needs.resolve-context.outputs.release_name }}
+          tag_name: ${{ needs.resolve-context.outputs.release_tag }}
+          body_path: ${{ runner.temp }}/release-notes.md
+          files: dist/*
+          overwrite_files: true
+          make_latest: false
+          prerelease: false
