@@ -17,6 +17,7 @@ on:
         default: false
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -169,7 +170,9 @@ jobs:
           fi
           git push origin "refs/tags/${LOONGARCH_TAG}"
 
-          echo "Pushed ${LOONGARCH_TAG}; loongarch64-release will run from the tag push."
+          gh workflow run loongarch64-release.yml --ref "${LOONGARCH_TAG}"
+
+          echo "Pushed ${LOONGARCH_TAG} and dispatched loongarch64-release."
 
       - name: Nothing to do
         if: steps.release.outputs.should_process != 'true'
