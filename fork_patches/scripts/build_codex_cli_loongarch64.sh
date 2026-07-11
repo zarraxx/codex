@@ -15,7 +15,6 @@ OPENSSL_STAGE_DIR=${OPENSSL_STAGE_DIR:-"$CODEX_RS_DIR/target/fork-support/$TARGE
 RUSTY_V8_MIRROR=${RUSTY_V8_MIRROR:-https://github.com/zarraxx/rusty_v8/releases/download}
 BUILD_LOG=${BUILD_LOG:-"/tmp/codex-loongarch64-cargo-build-$(date -u +%Y%m%dT%H%M%SZ).log"}
 
-PATCH_SCRIPT="$REPO_ROOT/fork_patches/scripts/apply_v8_149_2_0_loongarch64_patch.sh"
 LLVM_LINKER_WRAPPER="$REPO_ROOT/fork_patches/scripts/loongarch64-clang-linker.sh"
 if [[ "$TOOLCHAIN_KIND" == "llvm" ]]; then
   TOOLCHAIN_ROOT="$LLVM_TOOLCHAIN_ROOT"
@@ -49,10 +48,6 @@ if [[ ! -d "$ACTIVE_SYSROOT" ]]; then
 fi
 if [[ ! -d "$OPENSSL_SYSROOT" ]]; then
   echo "missing OpenSSL sysroot: $OPENSSL_SYSROOT" >&2
-  exit 1
-fi
-if [[ ! -x "$PATCH_SCRIPT" ]]; then
-  echo "missing patch script: $PATCH_SCRIPT" >&2
   exit 1
 fi
 if [[ "$TOOLCHAIN_KIND" == "llvm" && ! -x "$LLVM_LINKER_WRAPPER" ]]; then
@@ -126,8 +121,6 @@ TOOLCHAIN_CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' "$CODEX_RS_DIR/rust-tool
 if [[ -n "$TOOLCHAIN_CHANNEL" && -n "$HOST_TRIPLE" ]]; then
   rustup target add "$TARGET" --toolchain "${TOOLCHAIN_CHANNEL}-${HOST_TRIPLE}"
 fi
-
-"$PATCH_SCRIPT"
 
 export PATH="$TOOLCHAIN_ROOT/bin:$PATH"
 if [[ "$TOOLCHAIN_KIND" == "llvm" ]]; then

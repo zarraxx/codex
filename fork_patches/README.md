@@ -3,11 +3,6 @@ LoongArch64 support without directly modifying upstream repository files.
 
 Current contents:
 
-- `v8-149.2.0-loongarch64-writeflags.patch`
-  Fixes the `v8` crate's `WriteFlags` constant names for the generated
-  LoongArch64 binding.
-- `scripts/apply_v8_149_2_0_loongarch64_patch.sh`
-  Applies the patch to the cached `v8-149.2.0` crate source in `CARGO_HOME`.
 - `scripts/build_codex_cli_loongarch64.sh`
   Cross-builds `codex-cli` for `loongarch64-unknown-linux-gnu` using the
   fork's current LLVM/sysroot flow.
