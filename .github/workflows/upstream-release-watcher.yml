@@ -129,8 +129,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
-          git fetch --force upstream "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream-source/${UPSTREAM_TAG}"
-          git fetch --force origin "${BASE_BRANCH}"
+          git fetch --no-tags --force upstream "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream-source/${UPSTREAM_TAG}"
+          git fetch --no-tags --force origin "${BASE_BRANCH}"
           git checkout -B "${BASE_BRANCH}" "origin/${BASE_BRANCH}"
           git pull --ff-only origin "${BASE_BRANCH}"
 
