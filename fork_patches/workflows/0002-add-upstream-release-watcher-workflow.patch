@@ -3,7 +3,7 @@ new file mode 100644
 index 000000000..000000000
 --- /dev/null
 +++ b/.github/workflows/upstream-release-watcher.yml
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,170 @@
 +name: upstream-release-watcher
 +
 +on:
@@ -145,7 +145,11 @@ index 000000000..000000000
 +          if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
 +            echo "Upstream release ${UPSTREAM_TAG} is already contained in ${BASE_BRANCH}"
 +          else
-+            git merge --no-ff --no-edit "${upstream_ref}"
++            pre_merge_head="$(git rev-parse HEAD)"
++            git merge --no-ff --no-commit "${upstream_ref}"
++            git checkout "${pre_merge_head}" -- .github/workflows
++            git add .github/workflows
++            git commit --no-edit
 +          fi
 +
 +          push_upstream_style_tag=false

@@ -139,7 +139,11 @@ jobs:
           if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
             echo "Upstream release ${UPSTREAM_TAG} is already contained in ${BASE_BRANCH}"
           else
-            git merge --no-ff --no-edit "${upstream_ref}"
+            pre_merge_head="$(git rev-parse HEAD)"
+            git merge --no-ff --no-commit "${upstream_ref}"
+            git checkout "${pre_merge_head}" -- .github/workflows
+            git add .github/workflows
+            git commit --no-edit
           fi
 
           push_upstream_style_tag=false
