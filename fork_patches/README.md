@@ -21,6 +21,14 @@ Current contents:
 - `scripts/prepare_debian13_loongarch64_sysroot.sh`
   Builds a Debian 13 LoongArch64 sysroot directly from the Loong13 APT
   repositories for use by the cross-build workflow.
+- `workflows/0001-add-loongarch64-release-workflow.patch`
+  Records the standalone LoongArch64 release workflow that builds, QEMU
+  smoke-tests, and publishes tag-driven LoongArch64 archives.
+- `workflows/0002-add-upstream-release-watcher-workflow.patch`
+  Records the daily upstream release watcher workflow. It merges newer
+  upstream `openai/codex` release tags into this fork, creates the matching
+  upstream-style tag plus `rust-loongarch64-vX.Y.Z`, and lets the LoongArch64
+  release workflow publish from the LoongArch64 tag push.
 
 The build script assumes:
 
@@ -61,5 +69,10 @@ Workflow release lane:
 
 - The standalone LoongArch64 GitHub Actions workflow publishes from tags in the
   form `rust-loongarch64-vX.Y.Z`.
+- Release versions are derived from upstream release tags such as
+  `rust-v0.144.1`, not from `codex-rs/Cargo.toml`, which upstream currently
+  keeps at `0.0.0`.
 - Before publishing, the workflow downloads the packaged archive and boots it
   under QEMU in `ghcr.io/zarraxx/debian:trixie`.
+- The upstream release watcher runs once per day and can also be started
+  manually from GitHub Actions.

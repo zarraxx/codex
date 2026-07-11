@@ -1,0 +1,181 @@
+diff --git a/.github/workflows/upstream-release-watcher.yml b/.github/workflows/upstream-release-watcher.yml
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/.github/workflows/upstream-release-watcher.yml
+@@ -0,0 +1,166 @@
++name: upstream-release-watcher
++
++on:
++  schedule:
++    - cron: "17 3 * * *"
++  workflow_dispatch:
++    inputs:
++      force:
++        description: "Merge and tag even when the upstream release is not newer."
++        required: false
++        type: boolean
++        default: false
++      dry_run:
++        description: "Check what would happen without pushing changes or tags."
++        required: false
++        type: boolean
++        default: false
++
++permissions:
++  contents: write
++
++concurrency:
++  group: upstream-release-watcher
++  cancel-in-progress: false
++
++env:
++  UPSTREAM_REPO: openai/codex
++  BASE_BRANCH: main
++
++jobs:
++  check-merge-and-trigger:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout fork
++        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++        with:
++          fetch-depth: 0
++          ref: ${{ env.BASE_BRANCH }}
++
++      - name: Resolve upstream and fork releases
++        id: release
++        shell: bash
++        env:
++          GH_TOKEN: ${{ github.token }}
++          FORCE: ${{ inputs.force || false }}
++        run: |
++          set -euo pipefail
++
++          upstream_json="$(
++            gh api "repos/${UPSTREAM_REPO}/releases/latest" \
++              --jq '{tag_name, name, published_at, created_at}'
++          )"
++
++          upstream_tag="$(jq -r '.tag_name' <<< "${upstream_json}")"
++          upstream_name="$(jq -r '.name // ""' <<< "${upstream_json}")"
++          upstream_published_at="$(jq -r '.published_at // .created_at' <<< "${upstream_json}")"
++
++          if [[ -z "${upstream_tag}" || "${upstream_tag}" == "null" ]]; then
++            echo "Cannot determine upstream release tag" >&2
++            exit 1
++          fi
++
++          if [[ "${upstream_tag}" == rust-v* ]]; then
++            version="${upstream_tag#rust-v}"
++          elif [[ "${upstream_tag}" == v* ]]; then
++            version="${upstream_tag#v}"
++          else
++            version="${upstream_tag}"
++          fi
++
++          loongarch_tag="rust-loongarch64-v${version}"
++
++          fork_releases_json="$(
++            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100"
++          )"
++
++          latest_loongarch_release="$(
++            jq -c '
++              map(select(.tag_name | startswith("rust-loongarch64-v")))
++              | sort_by(.published_at // .created_at)
++              | last // empty
++            ' <<< "${fork_releases_json}"
++          )"
++
++          latest_loongarch_tag=""
++          latest_loongarch_published_at="1970-01-01T00:00:00Z"
++          if [[ -n "${latest_loongarch_release}" ]]; then
++            latest_loongarch_tag="$(jq -r '.tag_name' <<< "${latest_loongarch_release}")"
++            latest_loongarch_published_at="$(jq -r '.published_at // .created_at' <<< "${latest_loongarch_release}")"
++          fi
++
++          upstream_ts="$(date -u -d "${upstream_published_at}" +%s)"
++          loongarch_ts="$(date -u -d "${latest_loongarch_published_at}" +%s)"
++
++          should_process=false
++          if (( upstream_ts > loongarch_ts )); then
++            should_process=true
++          fi
++          if [[ "${FORCE}" == "true" ]]; then
++            should_process=true
++          fi
++
++          if git ls-remote --exit-code origin "refs/tags/${loongarch_tag}" >/dev/null 2>&1; then
++            echo "LoongArch64 release tag already exists: ${loongarch_tag}"
++            should_process=false
++          fi
++
++          echo "Upstream release: ${upstream_tag} (${upstream_name}) at ${upstream_published_at}"
++          echo "Latest LoongArch64 release: ${latest_loongarch_tag:-none} at ${latest_loongarch_published_at}"
++          echo "Next LoongArch64 tag: ${loongarch_tag}"
++          echo "should_process=${should_process}" >> "${GITHUB_OUTPUT}"
++          echo "upstream_tag=${upstream_tag}" >> "${GITHUB_OUTPUT}"
++          echo "upstream_published_at=${upstream_published_at}" >> "${GITHUB_OUTPUT}"
++          echo "version=${version}" >> "${GITHUB_OUTPUT}"
++          echo "loongarch_tag=${loongarch_tag}" >> "${GITHUB_OUTPUT}"
++
++      - name: Merge upstream release and tag fork release
++        if: steps.release.outputs.should_process == 'true'
++        shell: bash
++        env:
++          UPSTREAM_TAG: ${{ steps.release.outputs.upstream_tag }}
++          LOONGARCH_TAG: ${{ steps.release.outputs.loongarch_tag }}
++          DRY_RUN: ${{ inputs.dry_run || false }}
++        run: |
++          set -euo pipefail
++
++          git config user.name "github-actions[bot]"
++          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
++
++          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
++          git fetch --force upstream "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream-source/${UPSTREAM_TAG}"
++          git fetch --force origin "${BASE_BRANCH}"
++          git checkout -B "${BASE_BRANCH}" "origin/${BASE_BRANCH}"
++          git pull --ff-only origin "${BASE_BRANCH}"
++
++          upstream_ref="refs/tags/upstream-source/${UPSTREAM_TAG}"
++
++          if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
++            echo "Upstream release ${UPSTREAM_TAG} is already contained in ${BASE_BRANCH}"
++          else
++            git merge --no-ff --no-edit "${upstream_ref}"
++          fi
++
++          push_upstream_style_tag=false
++          if git ls-remote --exit-code origin "refs/tags/${UPSTREAM_TAG}" >/dev/null 2>&1; then
++            echo "Fork already has upstream-style tag ${UPSTREAM_TAG}"
++          elif git rev-parse -q --verify "refs/tags/${UPSTREAM_TAG}" >/dev/null; then
++            echo "Local upstream-style tag ${UPSTREAM_TAG} already exists"
++          else
++            git tag "${UPSTREAM_TAG}" HEAD
++            push_upstream_style_tag=true
++          fi
++
++          git tag "${LOONGARCH_TAG}" HEAD
++
++          if [[ "${DRY_RUN}" == "true" ]]; then
++            echo "Dry run enabled; not pushing ${BASE_BRANCH}, ${UPSTREAM_TAG}, or ${LOONGARCH_TAG}"
++            exit 0
++          fi
++
++          git push origin "${BASE_BRANCH}"
++          if [[ "${push_upstream_style_tag}" == "true" ]]; then
++            git push origin "refs/tags/${UPSTREAM_TAG}"
++          fi
++          git push origin "refs/tags/${LOONGARCH_TAG}"
++
++          echo "Pushed ${LOONGARCH_TAG}; loongarch64-release will run from the tag push."
++
++      - name: Nothing to do
++        if: steps.release.outputs.should_process != 'true'
++        shell: bash
++        run: |
++          set -euo pipefail
++          echo "No newer upstream release requires a LoongArch64 build."
