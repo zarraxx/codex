@@ -141,7 +141,18 @@ jobs:
             echo "Upstream release ${UPSTREAM_TAG} is already contained in ${BASE_BRANCH}"
           else
             pre_merge_head="$(git rev-parse HEAD)"
-            git merge --no-ff --no-commit "${upstream_ref}"
+            if ! git merge --no-ff --no-commit "${upstream_ref}"; then
+              mapfile -t conflicted_files < <(git diff --name-only --diff-filter=U)
+              if (( ${#conflicted_files[@]} == 0 )); then
+                echo "Merge failed, but no conflicted files were reported" >&2
+                exit 1
+              fi
+
+              echo "Accepting upstream versions for conflicted files:"
+              printf '  %s\n' "${conflicted_files[@]}"
+              git checkout --theirs -- "${conflicted_files[@]}"
+              git add -- "${conflicted_files[@]}"
+            fi
             git checkout "${pre_merge_head}" -- .github/workflows
             git add .github/workflows
             git commit --no-edit

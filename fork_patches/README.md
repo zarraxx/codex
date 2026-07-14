@@ -76,3 +76,5 @@ Workflow release lane:
   under QEMU in `ghcr.io/zarraxx/debian:trixie`.
 - The upstream release watcher runs once per day and can also be started
   manually from GitHub Actions.
+- If an upstream release tag conflicts while being merged, the watcher accepts
+  the upstream version of each conflicted file and continues the merge.
