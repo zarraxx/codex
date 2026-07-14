@@ -3,7 +3,7 @@ new file mode 100644
 index 000000000..000000000
 --- /dev/null
 +++ b/.github/workflows/upstream-release-watcher.yml
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,208 @@
 +name: upstream-release-watcher
 +
 +on:
@@ -82,6 +82,11 @@ index 000000000..000000000
 +            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100"
 +          )"
 +
++          loongarch_release_exists=false
++          if jq -e --arg tag "${loongarch_tag}" 'any(.[]; .tag_name == $tag)' <<< "${fork_releases_json}" >/dev/null; then
++            loongarch_release_exists=true
++          fi
++
 +          latest_loongarch_release="$(
 +            jq -c '
 +              map(select(.tag_name | startswith("rust-loongarch64-v")))
@@ -108,19 +113,28 @@ index 000000000..000000000
 +            should_process=true
 +          fi
 +
++          existing_loongarch_tag=false
 +          if git ls-remote --exit-code origin "refs/tags/${loongarch_tag}" >/dev/null 2>&1; then
++            existing_loongarch_tag=true
 +            echo "LoongArch64 release tag already exists: ${loongarch_tag}"
-+            should_process=false
++            if [[ "${loongarch_release_exists}" == "true" && "${FORCE}" != "true" ]]; then
++              should_process=false
++            else
++              should_process=true
++            fi
 +          fi
 +
 +          echo "Upstream release: ${upstream_tag} (${upstream_name}) at ${upstream_published_at}"
 +          echo "Latest LoongArch64 release: ${latest_loongarch_tag:-none} at ${latest_loongarch_published_at}"
 +          echo "Next LoongArch64 tag: ${loongarch_tag}"
++          echo "LoongArch64 tag exists: ${existing_loongarch_tag}"
++          echo "LoongArch64 release exists: ${loongarch_release_exists}"
 +          echo "should_process=${should_process}" >> "${GITHUB_OUTPUT}"
 +          echo "upstream_tag=${upstream_tag}" >> "${GITHUB_OUTPUT}"
 +          echo "upstream_published_at=${upstream_published_at}" >> "${GITHUB_OUTPUT}"
 +          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 +          echo "loongarch_tag=${loongarch_tag}" >> "${GITHUB_OUTPUT}"
++          echo "existing_loongarch_tag=${existing_loongarch_tag}" >> "${GITHUB_OUTPUT}"
 +
 +      - name: Merge upstream release and tag fork release
 +        if: steps.release.outputs.should_process == 'true'
@@ -130,8 +144,20 @@ index 000000000..000000000
 +          UPSTREAM_TAG: ${{ steps.release.outputs.upstream_tag }}
 +          LOONGARCH_TAG: ${{ steps.release.outputs.loongarch_tag }}
 +          DRY_RUN: ${{ inputs.dry_run || false }}
++          EXISTING_LOONGARCH_TAG: ${{ steps.release.outputs.existing_loongarch_tag }}
 +        run: |
 +          set -euo pipefail
++
++          if [[ "${EXISTING_LOONGARCH_TAG}" == "true" ]]; then
++            if [[ "${DRY_RUN}" == "true" ]]; then
++              echo "Dry run enabled; not dispatching loongarch64-release for existing tag ${LOONGARCH_TAG}"
++              exit 0
++            fi
++
++            gh workflow run loongarch64-release.yml --ref "${LOONGARCH_TAG}"
++            echo "Dispatched loongarch64-release for existing tag ${LOONGARCH_TAG}."
++            exit 0
++          fi
 +
 +          git config user.name "github-actions[bot]"
 +          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

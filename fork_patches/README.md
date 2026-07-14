@@ -78,3 +78,6 @@ Workflow release lane:
   manually from GitHub Actions.
 - If an upstream release tag conflicts while being merged, the watcher accepts
   the upstream version of each conflicted file and continues the merge.
+- If a previous watcher run pushed the LoongArch64 tag but failed before
+  dispatching the release workflow, a later run dispatches the existing tag
+  instead of stopping at the existing-tag check.
