@@ -126,6 +126,7 @@ index 000000000..000000000
 +        if: steps.release.outputs.should_process == 'true'
 +        shell: bash
 +        env:
++          GH_TOKEN: ${{ github.token }}
 +          UPSTREAM_TAG: ${{ steps.release.outputs.upstream_tag }}
 +          LOONGARCH_TAG: ${{ steps.release.outputs.loongarch_tag }}
 +          DRY_RUN: ${{ inputs.dry_run || false }}
