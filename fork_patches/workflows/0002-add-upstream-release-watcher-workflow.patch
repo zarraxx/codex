@@ -154,7 +154,7 @@ index 000000000..000000000
 +              exit 0
 +            fi
 +
-+            gh workflow run loongarch64-release.yml --ref "${LOONGARCH_TAG}"
++            gh workflow run loongarch64-release.yml --repo "${GITHUB_REPOSITORY}" --ref "${LOONGARCH_TAG}"
 +            echo "Dispatched loongarch64-release for existing tag ${LOONGARCH_TAG}."
 +            exit 0
 +          fi
@@ -214,7 +214,7 @@ index 000000000..000000000
 +          fi
 +          git push origin "refs/tags/${LOONGARCH_TAG}"
 +
-+          gh workflow run loongarch64-release.yml --ref "${LOONGARCH_TAG}"
++          gh workflow run loongarch64-release.yml --repo "${GITHUB_REPOSITORY}" --ref "${LOONGARCH_TAG}"
 +
 +          echo "Pushed ${LOONGARCH_TAG} and dispatched loongarch64-release."
 +
