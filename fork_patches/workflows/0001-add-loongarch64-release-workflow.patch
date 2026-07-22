@@ -1,9 +1,9 @@
 diff --git a/.github/workflows/loongarch64-release.yml b/.github/workflows/loongarch64-release.yml
 new file mode 100644
-index 000000000..5f1205884
+index 000000000..f99870541
 --- /dev/null
 +++ b/.github/workflows/loongarch64-release.yml
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,339 @@
 +name: loongarch64-release
 +
 +on:
@@ -11,58 +11,95 @@ index 000000000..5f1205884
 +    tags:
 +      - "rust-loongarch64-v*.*.*"
 +  workflow_dispatch:
++    inputs:
++      upstream_tag:
++        description: "Upstream Codex release tag, for example rust-v0.145.0"
++        required: true
++        type: string
++      publish_release:
++        description: "Publish or update the LoongArch64 GitHub release."
++        required: false
++        type: boolean
++        default: true
 +
 +concurrency:
-+  group: ${{ github.workflow }}::${{ github.ref }}
++  group: ${{ github.workflow }}::${{ inputs.upstream_tag || github.ref }}
 +  cancel-in-progress: false
 +
 +env:
 +  LLVM_TOOLCHAIN_URL: https://github.com/zarraxx/develop_suit/releases/download/clang-22.1.8/clang-22.1.8-x86_64-unknown-linux-gnu.tar.xz
 +  RUSTY_V8_MIRROR: https://github.com/zarraxx/rusty_v8/releases/download
 +  TARGET: loongarch64-unknown-linux-gnu
++  UPSTREAM_REPO: openai/codex
 +
 +jobs:
 +  resolve-context:
 +    runs-on: ubuntu-latest
 +    outputs:
-+      git_ref: ${{ steps.context.outputs.git_ref }}
++      upstream_tag: ${{ steps.context.outputs.upstream_tag }}
++      version: ${{ steps.context.outputs.version }}
 +      release_tag: ${{ steps.context.outputs.release_tag }}
 +      release_name: ${{ steps.context.outputs.release_name }}
 +      publish_release: ${{ steps.context.outputs.publish_release }}
 +
 +    steps:
-+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-+        with:
-+          fetch-depth: 0
-+          persist-credentials: false
-+          ref: ${{ github.sha }}
-+
 +      - name: Resolve build context
 +        id: context
 +        shell: bash
++        env:
++          INPUT_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
++          INPUT_PUBLISH_RELEASE: ${{ inputs.publish_release }}
 +        run: |
 +          set -euo pipefail
 +
-+          git_ref="${GITHUB_SHA}"
-+          publish_release=false
-+          release_tag=""
++          input_tag="${INPUT_UPSTREAM_TAG}"
++          if [[ -z "${input_tag}" && "${GITHUB_REF_NAME}" == rust-loongarch64-v* ]]; then
++            input_tag="rust-v${GITHUB_REF_NAME#rust-loongarch64-v}"
++          fi
 +
-+          release_tag="$(git describe --tags --exact-match 2>/dev/null | grep '^rust-loongarch64-v' | head -n 1 || true)"
-+          if [[ -n "${release_tag}" ]]; then
++          if [[ -z "${input_tag}" ]]; then
++            echo "missing upstream tag; set workflow_dispatch input upstream_tag" >&2
++            exit 1
++          fi
++
++          upstream_git_url="https://github.com/${UPSTREAM_REPO}.git"
++          if git ls-remote --exit-code --tags "${upstream_git_url}" "refs/tags/${input_tag}" >/dev/null 2>&1; then
++            upstream_tag="${input_tag}"
++          elif git ls-remote --exit-code --tags "${upstream_git_url}" "refs/tags/rust-v${input_tag}" >/dev/null 2>&1; then
++            upstream_tag="rust-v${input_tag}"
++          elif git ls-remote --exit-code --tags "${upstream_git_url}" "refs/tags/v${input_tag}" >/dev/null 2>&1; then
++            upstream_tag="v${input_tag}"
++          else
++            echo "could not find upstream release tag: ${input_tag}" >&2
++            exit 1
++          fi
++
++          if [[ "${upstream_tag}" == rust-v* ]]; then
++            version="${upstream_tag#rust-v}"
++          elif [[ "${upstream_tag}" == v* ]]; then
++            version="${upstream_tag#v}"
++          else
++            version="${upstream_tag}"
++          fi
++
++          if [[ ! "${version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
++            echo "invalid upstream release version: ${version}" >&2
++            exit 1
++          fi
++
++          publish_release="${INPUT_PUBLISH_RELEASE:-true}"
++          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
 +            publish_release=true
-+            tag_ver="${release_tag#rust-loongarch64-v}"
-+            if [[ ! "${tag_ver}" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
-+              echo "invalid LoongArch64 release tag version: ${tag_ver}" >&2
-+              exit 1
-+            fi
 +          fi
 +
-+          release_name="manual-loongarch64-build"
-+          if [[ -n "${release_tag}" ]]; then
-+            release_name="${release_tag#rust-loongarch64-v} loongarch64"
-+          fi
++          release_tag="rust-loongarch64-v${version}"
++          release_name="${version} loongarch64"
 +
-+          echo "git_ref=${git_ref}" >> "$GITHUB_OUTPUT"
++          echo "Upstream tag: ${upstream_tag}"
++          echo "LoongArch64 release tag: ${release_tag}"
++          echo "Publish release: ${publish_release}"
++          echo "upstream_tag=${upstream_tag}" >> "$GITHUB_OUTPUT"
++          echo "version=${version}" >> "$GITHUB_OUTPUT"
 +          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
 +          echo "release_name=${release_name}" >> "$GITHUB_OUTPUT"
 +          echo "publish_release=${publish_release}" >> "$GITHUB_OUTPUT"
@@ -74,11 +111,42 @@ index 000000000..5f1205884
 +      contents: read
 +
 +    steps:
-+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++      - name: Checkout upstream release
++        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 +        with:
-+          fetch-depth: 0
++          repository: ${{ env.UPSTREAM_REPO }}
++          ref: ${{ needs.resolve-context.outputs.upstream_tag }}
++          path: upstream
++          fetch-depth: 1
 +          persist-credentials: false
-+          ref: ${{ needs.resolve-context.outputs.git_ref }}
++
++      - name: Checkout fork tools
++        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++        with:
++          repository: ${{ github.repository }}
++          ref: ${{ github.sha }}
++          path: fork-tools
++          fetch-depth: 1
++          persist-credentials: false
++
++      - name: Inject fork patches and scripts
++        shell: bash
++        run: |
++          set -euo pipefail
++
++          rm -rf upstream/fork_patches
++          cp -a fork-tools/fork_patches upstream/fork_patches
++          find upstream/fork_patches/scripts -type f -name '*.sh' -exec chmod +x {} +
++
++          cd upstream
++          if compgen -G "fork_patches/upstream/*.patch" >/dev/null; then
++            for patch in fork_patches/upstream/*.patch; do
++              echo "Applying ${patch}"
++              git apply "${patch}"
++            done
++          else
++            echo "No upstream source patches to apply."
++          fi
 +
 +      - name: Install build dependencies
 +        shell: bash
@@ -91,9 +159,22 @@ index 000000000..5f1205884
 +            patchelf \
 +            xz-utils
 +
-+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
-+        with:
-+          targets: loongarch64-unknown-linux-gnu
++      - name: Install Rust toolchain
++        shell: bash
++        run: |
++          set -euo pipefail
++
++          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' upstream/codex-rs/rust-toolchain.toml | head -n 1)"
++          if [[ -z "${toolchain}" ]]; then
++            echo "cannot determine Rust toolchain from upstream/codex-rs/rust-toolchain.toml" >&2
++            exit 1
++          fi
++
++          rustup toolchain install "${toolchain}" \
++            --profile minimal \
++            --component rust-src \
++            --target "${TARGET}"
++          rustup target add "${TARGET}" --toolchain "${toolchain}"
 +
 +      - name: Download LLVM toolchain
 +        shell: bash
@@ -112,7 +193,7 @@ index 000000000..5f1205884
 +        run: |
 +          set -euo pipefail
 +          sysroot_dir="${RUNNER_TEMP}/debian13-loong64-sysroot"
-+          sudo env SYSROOT="${sysroot_dir}" fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
++          sudo env SYSROOT="${sysroot_dir}" upstream/fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
 +          sudo chown -R "$(id -u):$(id -g)" "${sysroot_dir}"
 +          echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
 +
@@ -127,7 +208,7 @@ index 000000000..5f1205884
 +          OPENSSL_SYSROOT="${SYSROOT}" \
 +          RUSTY_V8_MIRROR="${RUSTY_V8_MIRROR}" \
 +          BUILD_LOG="${build_log}" \
-+          fork_patches/scripts/build_codex_cli_loongarch64.sh
++          upstream/fork_patches/scripts/build_codex_cli_loongarch64.sh
 +          echo "BUILD_LOG=${build_log}" >> "$GITHUB_ENV"
 +
 +      - name: Package release archive
@@ -141,7 +222,7 @@ index 000000000..5f1205884
 +          PATCHELF_BIN=patchelf \
 +          ARCHIVE_PATH="${archive_path}" \
 +          DIST_DIR="${RUNNER_TEMP}/codex-${TARGET}-release" \
-+          fork_patches/scripts/package_codex_cli_loongarch64.sh
++          upstream/fork_patches/scripts/package_codex_cli_loongarch64.sh
 +          sha256sum "${archive_path}" > "${archive_path}.sha256"
 +          cp "${archive_path}" dist/
 +          cp "${archive_path}.sha256" dist/
@@ -163,11 +244,14 @@ index 000000000..5f1205884
 +      contents: read
 +
 +    steps:
-+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++      - name: Checkout fork tools
++        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 +        with:
-+          fetch-depth: 0
++          repository: ${{ github.repository }}
++          ref: ${{ github.sha }}
++          path: fork-tools
++          fetch-depth: 1
 +          persist-credentials: false
-+          ref: ${{ needs.resolve-context.outputs.git_ref }}
 +
 +      - name: Enable LoongArch64 QEMU
 +        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -192,7 +276,7 @@ index 000000000..5f1205884
 +
 +          CONTAINER_ENGINE=docker \
 +          ARCHIVE_PATH="${archive_path}" \
-+          fork_patches/scripts/smoke_test_codex_cli_loongarch64_container.sh
++          fork-tools/fork_patches/scripts/smoke_test_codex_cli_loongarch64_container.sh
 +
 +  publish-release:
 +    needs:
@@ -205,12 +289,6 @@ index 000000000..5f1205884
 +      contents: write
 +
 +    steps:
-+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-+        with:
-+          fetch-depth: 0
-+          persist-credentials: false
-+          ref: ${{ needs.resolve-context.outputs.git_ref }}
-+
 +      - name: Download LoongArch64 artifacts
 +        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 +        with:
@@ -219,13 +297,23 @@ index 000000000..5f1205884
 +
 +      - name: Prepare release notes
 +        shell: bash
++        env:
++          GH_TOKEN: ${{ github.token }}
++          UPSTREAM_TAG: ${{ needs.resolve-context.outputs.upstream_tag }}
 +        run: |
 +          set -euo pipefail
 +
 +          notes_path="${RUNNER_TEMP}/release-notes.md"
-+          commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-+          git log -1 --format=%B "${commit}" > "${notes_path}"
++          upstream_url="https://github.com/${UPSTREAM_REPO}/releases/tag/${UPSTREAM_TAG}"
++          upstream_release_name="$(
++            gh api "repos/${UPSTREAM_REPO}/releases/tags/${UPSTREAM_TAG}" --jq '.name // ""' 2>/dev/null || true
++          )"
++
 +          {
++            printf 'Built from upstream Codex release: [%s](%s)\n' "${UPSTREAM_TAG}" "${upstream_url}"
++            if [[ -n "${upstream_release_name}" ]]; then
++              printf '\nUpstream release name: %s\n' "${upstream_release_name}"
++            fi
 +            printf '\n## LoongArch64 (Debian 13)\n\n'
 +            printf '%s\n' \
 +              'This release adds `codex-loongarch64-unknown-linux-gnu-release.tar.xz`, built' \
@@ -242,13 +330,14 @@ index 000000000..5f1205884
 +              'tar -xf codex-loongarch64-unknown-linux-gnu-release.tar.xz' \
 +              './codex-loongarch64-unknown-linux-gnu-release/bin/codex' \
 +              '```'
-+          } >> "${notes_path}"
++          } > "${notes_path}"
 +
 +      - name: Upload LoongArch64 assets to GitHub release
 +        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
 +        with:
 +          name: ${{ needs.resolve-context.outputs.release_name }}
 +          tag_name: ${{ needs.resolve-context.outputs.release_tag }}
++          target_commitish: ${{ github.sha }}
 +          body_path: ${{ runner.temp }}/release-notes.md
 +          files: dist/*
 +          overwrite_files: true

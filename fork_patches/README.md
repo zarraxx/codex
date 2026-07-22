@@ -25,10 +25,10 @@ Current contents:
   Records the standalone LoongArch64 release workflow that builds, QEMU
   smoke-tests, and publishes tag-driven LoongArch64 archives.
 - `workflows/0002-add-upstream-release-watcher-workflow.patch`
-  Records the daily upstream release watcher workflow. It merges newer
-  upstream `openai/codex` release tags into this fork, creates the matching
-  upstream-style tag plus `rust-loongarch64-vX.Y.Z`, and lets the LoongArch64
-  release workflow publish from the LoongArch64 tag push.
+  Records the daily upstream release watcher workflow. It checks the latest
+  upstream `openai/codex` release and dispatches the LoongArch64 release
+  workflow with that upstream tag. It does not merge upstream release tags into
+  this fork.
 
 The build script assumes:
 
@@ -67,17 +67,20 @@ Runtime expectation on Debian 13:
 
 Workflow release lane:
 
-- The standalone LoongArch64 GitHub Actions workflow publishes from tags in the
+- The standalone LoongArch64 GitHub Actions workflow publishes releases in the
   form `rust-loongarch64-vX.Y.Z`.
 - Release versions are derived from upstream release tags such as
   `rust-v0.144.1`, not from `codex-rs/Cargo.toml`, which upstream currently
   keeps at `0.0.0`.
+- The workflow checks out the requested upstream `openai/codex` release tag into
+  an `upstream/` worktree, checks out this fork into `fork-tools/`, copies
+  `fork_patches/` into `upstream/`, and builds there.
+- If fork-specific upstream source patches are needed later, put them in
+  `fork_patches/upstream/*.patch`; the release workflow applies those patches
+  after checking out the upstream release tag.
 - Before publishing, the workflow downloads the packaged archive and boots it
   under QEMU in `ghcr.io/zarraxx/debian:trixie`.
 - The upstream release watcher runs once per day and can also be started
   manually from GitHub Actions.
-- If an upstream release tag conflicts while being merged, the watcher accepts
-  the upstream version of each conflicted file and continues the merge.
-- If a previous watcher run pushed the LoongArch64 tag but failed before
-  dispatching the release workflow, a later run dispatches the existing tag
-  instead of stopping at the existing-tag check.
+- The watcher only dispatches the release workflow. It does not create merge
+  commits, upstream-style tags, or LoongArch64 tags on `main`.

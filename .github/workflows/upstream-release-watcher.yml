@@ -6,19 +6,19 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Merge and tag even when the upstream release is not newer."
+        description: "Dispatch a build even when the matching LoongArch64 release already exists."
         required: false
         type: boolean
         default: false
       dry_run:
-        description: "Check what would happen without pushing changes or tags."
+        description: "Check what would happen without dispatching the release workflow."
         required: false
         type: boolean
         default: false
 
 permissions:
   actions: write
-  contents: write
+  contents: read
 
 concurrency:
   group: upstream-release-watcher
@@ -29,16 +29,10 @@ env:
   BASE_BRANCH: main
 
 jobs:
-  check-merge-and-trigger:
+  check-and-trigger:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout fork
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-          ref: ${{ env.BASE_BRANCH }}
-
       - name: Resolve upstream and fork releases
         id: release
         shell: bash
@@ -106,31 +100,22 @@ jobs:
           if [[ "${FORCE}" == "true" ]]; then
             should_process=true
           fi
-
-          existing_loongarch_tag=false
-          if git ls-remote --exit-code origin "refs/tags/${loongarch_tag}" >/dev/null 2>&1; then
-            existing_loongarch_tag=true
-            echo "LoongArch64 release tag already exists: ${loongarch_tag}"
-            if [[ "${loongarch_release_exists}" == "true" && "${FORCE}" != "true" ]]; then
-              should_process=false
-            else
-              should_process=true
-            fi
+          if [[ "${loongarch_release_exists}" == "true" && "${FORCE}" != "true" ]]; then
+            should_process=false
           fi
 
           echo "Upstream release: ${upstream_tag} (${upstream_name}) at ${upstream_published_at}"
           echo "Latest LoongArch64 release: ${latest_loongarch_tag:-none} at ${latest_loongarch_published_at}"
-          echo "Next LoongArch64 tag: ${loongarch_tag}"
-          echo "LoongArch64 tag exists: ${existing_loongarch_tag}"
+          echo "Next LoongArch64 release tag: ${loongarch_tag}"
           echo "LoongArch64 release exists: ${loongarch_release_exists}"
           echo "should_process=${should_process}" >> "${GITHUB_OUTPUT}"
           echo "upstream_tag=${upstream_tag}" >> "${GITHUB_OUTPUT}"
           echo "upstream_published_at=${upstream_published_at}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "loongarch_tag=${loongarch_tag}" >> "${GITHUB_OUTPUT}"
-          echo "existing_loongarch_tag=${existing_loongarch_tag}" >> "${GITHUB_OUTPUT}"
+          echo "loongarch_release_exists=${loongarch_release_exists}" >> "${GITHUB_OUTPUT}"
 
-      - name: Merge upstream release and tag fork release
+      - name: Dispatch LoongArch64 release workflow
         if: steps.release.outputs.should_process == 'true'
         shell: bash
         env:
@@ -138,79 +123,21 @@ jobs:
           UPSTREAM_TAG: ${{ steps.release.outputs.upstream_tag }}
           LOONGARCH_TAG: ${{ steps.release.outputs.loongarch_tag }}
           DRY_RUN: ${{ inputs.dry_run || false }}
-          EXISTING_LOONGARCH_TAG: ${{ steps.release.outputs.existing_loongarch_tag }}
         run: |
           set -euo pipefail
 
-          if [[ "${EXISTING_LOONGARCH_TAG}" == "true" ]]; then
-            if [[ "${DRY_RUN}" == "true" ]]; then
-              echo "Dry run enabled; not dispatching loongarch64-release for existing tag ${LOONGARCH_TAG}"
-              exit 0
-            fi
-
-            gh workflow run loongarch64-release.yml --repo "${GITHUB_REPOSITORY}" --ref "${LOONGARCH_TAG}"
-            echo "Dispatched loongarch64-release for existing tag ${LOONGARCH_TAG}."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
-          git fetch --no-tags --force upstream "refs/tags/${UPSTREAM_TAG}:refs/tags/upstream-source/${UPSTREAM_TAG}"
-          git fetch --no-tags --force origin "${BASE_BRANCH}"
-          git checkout -B "${BASE_BRANCH}" "origin/${BASE_BRANCH}"
-          git pull --ff-only origin "${BASE_BRANCH}"
-
-          upstream_ref="refs/tags/upstream-source/${UPSTREAM_TAG}"
-
-          if git merge-base --is-ancestor "${upstream_ref}" HEAD; then
-            echo "Upstream release ${UPSTREAM_TAG} is already contained in ${BASE_BRANCH}"
-          else
-            pre_merge_head="$(git rev-parse HEAD)"
-            if ! git merge --no-ff --no-commit "${upstream_ref}"; then
-              mapfile -t conflicted_files < <(git diff --name-only --diff-filter=U)
-              if (( ${#conflicted_files[@]} == 0 )); then
-                echo "Merge failed, but no conflicted files were reported" >&2
-                exit 1
-              fi
-
-              echo "Accepting upstream versions for conflicted files:"
-              printf '  %s\n' "${conflicted_files[@]}"
-              git checkout --theirs -- "${conflicted_files[@]}"
-              git add -- "${conflicted_files[@]}"
-            fi
-            git checkout "${pre_merge_head}" -- .github/workflows
-            git add .github/workflows
-            git commit --no-edit
-          fi
-
-          push_upstream_style_tag=false
-          if git ls-remote --exit-code origin "refs/tags/${UPSTREAM_TAG}" >/dev/null 2>&1; then
-            echo "Fork already has upstream-style tag ${UPSTREAM_TAG}"
-          elif git rev-parse -q --verify "refs/tags/${UPSTREAM_TAG}" >/dev/null; then
-            echo "Local upstream-style tag ${UPSTREAM_TAG} already exists"
-          else
-            git tag "${UPSTREAM_TAG}" HEAD
-            push_upstream_style_tag=true
-          fi
-
-          git tag "${LOONGARCH_TAG}" HEAD
-
           if [[ "${DRY_RUN}" == "true" ]]; then
-            echo "Dry run enabled; not pushing ${BASE_BRANCH}, ${UPSTREAM_TAG}, or ${LOONGARCH_TAG}"
+            echo "Dry run enabled; not dispatching loongarch64-release for ${UPSTREAM_TAG}."
             exit 0
           fi
 
-          git push origin "${BASE_BRANCH}"
-          if [[ "${push_upstream_style_tag}" == "true" ]]; then
-            git push origin "refs/tags/${UPSTREAM_TAG}"
-          fi
-          git push origin "refs/tags/${LOONGARCH_TAG}"
+          gh workflow run loongarch64-release.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${BASE_BRANCH}" \
+            -f "upstream_tag=${UPSTREAM_TAG}" \
+            -f "publish_release=true"
 
-          gh workflow run loongarch64-release.yml --repo "${GITHUB_REPOSITORY}" --ref "${LOONGARCH_TAG}"
-
-          echo "Pushed ${LOONGARCH_TAG} and dispatched loongarch64-release."
+          echo "Dispatched loongarch64-release for ${UPSTREAM_TAG} -> ${LOONGARCH_TAG}."
 
       - name: Nothing to do
         if: steps.release.outputs.should_process != 'true'
