@@ -3,6 +3,12 @@ LoongArch64 support without directly modifying upstream repository files.
 
 Current contents:
 
+- `loongarch64-wrapper/codex-wrapper.js`
+  Node.js launcher that checks the fork's compatible GitHub Releases once per
+  day, verifies downloads, and atomically updates `~/opt/codex`.
+- `loongarch64-wrapper/install.sh`
+  Installs the launcher into `~/.local/bin`, makes it take precedence in PATH,
+  and installs the latest LoongArch64 native bundle.
 - `scripts/build_codex_cli_loongarch64.sh`
   Cross-builds `codex-cli` for `loongarch64-unknown-linux-gnu` using the
   fork's current LLVM/sysroot flow.
