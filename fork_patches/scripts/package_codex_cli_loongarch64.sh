@@ -11,6 +11,7 @@ DIST_DIR=${DIST_DIR:-"$REPO_ROOT/fork_patches/dist/codex-$TARGET-$PROFILE"}
 PATCHELF_BIN=${PATCHELF_BIN:-patchelf}
 BIN_NAME=${BIN_NAME:-codex}
 TARGET_BIN=${TARGET_BIN:-"$CODEX_RS_DIR/target/$TARGET/$PROFILE/$BIN_NAME"}
+BINARIES=${BINARIES:-"codex codex-code-mode-host codex-responses-api-proxy bwrap"}
 LLVM_RUNTIME_DIR=${LLVM_RUNTIME_DIR:-"$LLVM_TOOLCHAIN_ROOT/lib/$TARGET"}
 ARCHIVE_PATH=${ARCHIVE_PATH:-"$REPO_ROOT/fork_patches/dist/codex-$TARGET-$PROFILE.tar.xz"}
 STRIP_MODE=${STRIP_MODE:-auto}
@@ -49,10 +50,18 @@ strip_binary() {
   esac
 }
 
-if [[ ! -x "$TARGET_BIN" ]]; then
-  echo "missing target binary: $TARGET_BIN" >&2
-  exit 1
+if [[ -n "${BIN_NAME:-}" && -n "${TARGET_BIN:-}" && "$BINARIES" == "$BIN_NAME" ]]; then
+  binaries=("$BIN_NAME")
+else
+  read -r -a binaries <<< "$BINARIES"
 fi
+for binary in "${binaries[@]}"; do
+  target_bin="$CODEX_RS_DIR/target/$TARGET/$PROFILE/$binary"
+  if [[ ! -x "$target_bin" ]]; then
+    echo "missing target binary: $target_bin" >&2
+    exit 1
+  fi
+done
 if [[ ! -d "$LLVM_RUNTIME_DIR" ]]; then
   echo "missing LLVM runtime dir: $LLVM_RUNTIME_DIR" >&2
   exit 1
@@ -74,10 +83,17 @@ if [[ "$STRIP_MODE" != "none" && ! -x "$STRIP_BIN" ]]; then
 fi
 
 rm -rf "$DIST_DIR"
-mkdir -p "$DIST_DIR/bin" "$DIST_DIR/lib"
+mkdir -p "$DIST_DIR/bin" "$DIST_DIR/codex-resources" "$DIST_DIR/lib"
 
-install -m 755 "$TARGET_BIN" "$DIST_DIR/bin/$BIN_NAME"
-strip_binary "$DIST_DIR/bin/$BIN_NAME" "$STRIP_MODE"
+for binary in "${binaries[@]}"; do
+  target_bin="$CODEX_RS_DIR/target/$TARGET/$PROFILE/$binary"
+  if [[ "$binary" == "bwrap" ]]; then
+    install -m 755 "$target_bin" "$DIST_DIR/codex-resources/bwrap"
+  else
+    install -m 755 "$target_bin" "$DIST_DIR/bin/$binary"
+    strip_binary "$DIST_DIR/bin/$binary" "$STRIP_MODE"
+  fi
+done
 copy_runtime_libs \
   "$LLVM_RUNTIME_DIR" \
   "$DIST_DIR/lib" \
@@ -85,14 +101,25 @@ copy_runtime_libs \
   'libc++abi.so*' \
   'libunwind.so*'
 
-"$PATCHELF_BIN" \
-  --set-rpath '$ORIGIN/../lib' \
-  "$DIST_DIR/bin/$BIN_NAME"
+for binary in "${binaries[@]}"; do
+  if [[ "$binary" == "bwrap" ]]; then
+    continue
+  fi
+  "$PATCHELF_BIN" \
+    --set-rpath '$ORIGIN/../lib' \
+    "$DIST_DIR/bin/$binary"
+done
 
 mkdir -p "$(dirname -- "$ARCHIVE_PATH")"
 tar -C "$(dirname -- "$DIST_DIR")" -cJf "$ARCHIVE_PATH" "$(basename -- "$DIST_DIR")"
 
-echo "packaged binary: $DIST_DIR/bin/$BIN_NAME"
+for binary in "${binaries[@]}"; do
+  if [[ "$binary" == "bwrap" ]]; then
+    echo "packaged binary: $DIST_DIR/codex-resources/bwrap"
+  else
+    echo "packaged binary: $DIST_DIR/bin/$binary"
+  fi
+done
 echo "strip mode: $STRIP_MODE"
 echo "runtime libs dir: $DIST_DIR/lib"
 echo "archive: $ARCHIVE_PATH"

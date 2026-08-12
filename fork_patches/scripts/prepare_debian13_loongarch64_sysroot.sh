@@ -27,7 +27,7 @@ DEBIAN_SUITE=${DEBIAN_SUITE:-trixie}
 DEBIAN_ARCH=${DEBIAN_ARCH:-loong64}
 DEBIAN_MAIN_REPO=${DEBIAN_MAIN_REPO:-https://loong13.debian.net/debian-loong64/}
 DEBIAN_COMPONENTS=${DEBIAN_COMPONENTS:-main contrib non-free non-free-firmware}
-DEBIAN_INCLUDE_PACKAGES=${DEBIAN_INCLUDE_PACKAGES:-ca-certificates,libc6,libc6-dev,linux-libc-dev,libssl-dev,libssl3t64,zlib1g,zlib1g-dev}
+DEBIAN_INCLUDE_PACKAGES=${DEBIAN_INCLUDE_PACKAGES:-ca-certificates,libc6,libc6-dev,linux-libc-dev,libcap-dev,libssl-dev,libssl3t64,zlib1g,zlib1g-dev}
 
 if [[ -z "$SYSROOT" ]]; then
   echo "missing sysroot output directory" >&2

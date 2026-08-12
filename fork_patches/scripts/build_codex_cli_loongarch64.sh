@@ -14,6 +14,8 @@ OPENSSL_SYSROOT=${OPENSSL_SYSROOT:-"$SYSROOT"}
 OPENSSL_STAGE_DIR=${OPENSSL_STAGE_DIR:-"$CODEX_RS_DIR/target/fork-support/$TARGET/openssl"}
 RUSTY_V8_MIRROR=${RUSTY_V8_MIRROR:-https://github.com/zarraxx/rusty_v8/releases/download}
 BUILD_LOG=${BUILD_LOG:-"/tmp/codex-loongarch64-cargo-build-$(date -u +%Y%m%dT%H%M%SZ).log"}
+BINARIES=${BINARIES:-"codex codex-code-mode-host codex-responses-api-proxy bwrap"}
+STRIP_BIN=${STRIP_BIN:-"$LLVM_TOOLCHAIN_ROOT/bin/$TARGET-strip"}
 
 LLVM_LINKER_WRAPPER="$REPO_ROOT/fork_patches/scripts/loongarch64-clang-linker.sh"
 if [[ "$TOOLCHAIN_KIND" == "llvm" ]]; then
@@ -54,7 +56,6 @@ if [[ "$TOOLCHAIN_KIND" == "llvm" && ! -x "$LLVM_LINKER_WRAPPER" ]]; then
   echo "missing llvm linker wrapper: $LLVM_LINKER_WRAPPER" >&2
   exit 1
 fi
-
 mkdir -p "$ACTIVE_SYSROOT/usr/include"
 mkdir -p "$OPENSSL_SYSROOT/usr/include/openssl"
 
@@ -154,14 +155,52 @@ export LOONGARCH64_UNKNOWN_LINUX_GNU_OPENSSL_LIB_DIR="$OPENSSL_STAGE_DIR/lib"
 export LOONGARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR="$OPENSSL_STAGE_DIR/include"
 
 cd "$CODEX_RS_DIR"
-cargo_args=(build -p codex-cli --target "$TARGET" -vv)
+read -r -a binaries <<< "$BINARIES"
+build_bwrap=false
+cargo_args=(build --target "$TARGET" -vv)
+for binary in "${binaries[@]}"; do
+  if [[ "$binary" == "bwrap" ]]; then
+    build_bwrap=true
+    continue
+  fi
+  cargo_args+=(--bin "$binary")
+done
+if [[ "$build_bwrap" == "true" ]]; then
+  if [[ ! -x "$STRIP_BIN" ]]; then
+    echo "missing strip tool: $STRIP_BIN" >&2
+    exit 1
+  fi
+  bwrap_args=(build --target "$TARGET" -vv --bin bwrap)
+  if [[ "$PROFILE" == "release" ]]; then
+    bwrap_args+=(--release)
+  elif [[ "$PROFILE" != "debug" ]]; then
+    bwrap_args+=(--profile "$PROFILE")
+  fi
+  cargo "${bwrap_args[@]}" 2>&1 | tee "$BUILD_LOG"
+  bwrap_path="$CODEX_RS_DIR/target/$TARGET/$PROFILE/bwrap"
+  if [[ ! -x "$bwrap_path" ]]; then
+    echo "missing bwrap binary: $bwrap_path" >&2
+    exit 1
+  fi
+  "$STRIP_BIN" --strip-debug --strip-unneeded "$bwrap_path"
+  export CODEX_BWRAP_SHA256
+  CODEX_BWRAP_SHA256="$(sha256sum "$bwrap_path" | awk '{print $1}')"
+  echo "built bwrap: $bwrap_path"
+  echo "CODEX_BWRAP_SHA256=$CODEX_BWRAP_SHA256"
+fi
 if [[ "$PROFILE" == "release" ]]; then
   cargo_args+=(--release)
 elif [[ "$PROFILE" != "debug" ]]; then
   cargo_args+=(--profile "$PROFILE")
 fi
 
-cargo "${cargo_args[@]}" 2>&1 | tee "$BUILD_LOG"
+if [[ "$build_bwrap" == "true" ]]; then
+  cargo "${cargo_args[@]}" 2>&1 | tee -a "$BUILD_LOG"
+else
+  cargo "${cargo_args[@]}" 2>&1 | tee "$BUILD_LOG"
+fi
 
 echo "build log: $BUILD_LOG"
-echo "expected binary: $CODEX_RS_DIR/target/$TARGET/$PROFILE/codex"
+for binary in "${binaries[@]}"; do
+  echo "expected binary: $CODEX_RS_DIR/target/$TARGET/$PROFILE/$binary"
+done

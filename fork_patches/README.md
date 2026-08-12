@@ -10,20 +10,21 @@ Current contents:
   Installs the launcher into `~/.local/bin`, makes it take precedence in PATH,
   and installs the latest LoongArch64 native bundle.
 - `scripts/build_codex_cli_loongarch64.sh`
-  Cross-builds `codex-cli` for `loongarch64-unknown-linux-gnu` using the
-  fork's current LLVM/sysroot flow.
+  Cross-builds the primary Codex release binaries for
+  `loongarch64-unknown-linux-gnu` using the fork's current LLVM/sysroot flow.
 - `scripts/loongarch64-clang-linker.sh`
   Wraps the LoongArch64 Clang C++ driver so final links use
   `compiler-rt`, `libunwind`, `libc++`, and `libc++abi` instead of `libgcc`.
 - `scripts/package_codex_cli_loongarch64.sh`
-  Stages the built `codex` binary with its LLVM runtime libraries,
-  applies an `rpath` with `patchelf`, strips release binaries by default, and
-  emits a `.tar.xz` bundle.
+  Stages the built `codex`, `codex-code-mode-host`,
+  `codex-responses-api-proxy`, and bundled `codex-resources/bwrap` binaries
+  with their LLVM runtime libraries, applies an `rpath` with `patchelf`,
+  strips release binaries by default, and emits a `.tar.xz` bundle.
 - `scripts/smoke_test_codex_cli_loongarch64_container.sh`
-  Launches the packaged `codex` bundle inside
-  `ghcr.io/zarraxx/debian:trixie` under LoongArch64 emulation and verifies
-  that `codex --version` starts successfully after installing runtime
-  packages.
+  Launches the packaged bundle inside `ghcr.io/zarraxx/debian:trixie` under
+  LoongArch64 emulation and verifies that `codex`,
+  `codex-code-mode-host`, `codex-responses-api-proxy`, and bundled `bwrap`
+  start successfully after installing runtime packages.
 - `scripts/prepare_debian13_loongarch64_sysroot.sh`
   Builds a Debian 13 LoongArch64 sysroot directly from the Loong13 APT
   repositories for use by the cross-build workflow.
@@ -67,9 +68,9 @@ Runtime expectation on Debian 13:
 
 - The package bundles `libc++.so.1`, `libc++abi.so.1`, and `libunwind.so.1`
   from LLVM 22.1.8.
-- OpenSSL is expected from the target system. On minimal Debian 13 systems,
-  install it with:
-  `sudo apt update && sudo apt install -y ca-certificates libssl3t64`
+- OpenSSL and libcap are expected from the target system. On minimal Debian 13
+  systems, install them with:
+  `sudo apt update && sudo apt install -y ca-certificates libcap2 libssl3t64`
 
 Workflow release lane:
 

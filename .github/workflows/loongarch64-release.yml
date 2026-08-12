@@ -151,6 +151,7 @@ jobs:
             curl \
             mmdebstrap \
             patchelf \
+            pkg-config \
             xz-utils
 
       - name: Install Rust toolchain
@@ -191,7 +192,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "${sysroot_dir}"
           echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
 
-      - name: Cross-build codex-cli
+      - name: Cross-build Codex binaries
         shell: bash
         run: |
           set -euo pipefail
@@ -312,15 +313,22 @@ jobs:
             printf '%s\n' \
               'This release adds `codex-loongarch64-unknown-linux-gnu-release.tar.xz`, built' \
               'with LLVM 22.1.8 and a Debian 13 (Trixie) LoongArch64 sysroot.'
+            printf '\nIncluded binaries:\n'
+            printf '%s\n' \
+              '- `codex`' \
+              '- `codex-code-mode-host`' \
+              '- `codex-responses-api-proxy`' \
+              '- `codex-resources/bwrap`'
             printf '\nRuntime notes:\n'
             printf '%s\n' \
               '- `libc++.so.1`, `libc++abi.so.1`, and `libunwind.so.1` are bundled.' \
-              '- OpenSSL is expected from the target system.'
+              '- OpenSSL and libcap are expected from the target system.' \
+              '- `rusty_v8` prebuilt assets are resolved through the fork mirror prefix.'
             printf '\nInstall on Debian 13:\n'
             printf '%s\n' \
               '```bash' \
               'sudo apt update' \
-              'sudo apt install -y ca-certificates libssl3t64' \
+              'sudo apt install -y ca-certificates libcap2 libssl3t64' \
               'tar -xf codex-loongarch64-unknown-linux-gnu-release.tar.xz' \
               './codex-loongarch64-unknown-linux-gnu-release/bin/codex' \
               '```'

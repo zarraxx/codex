@@ -29,7 +29,7 @@ TARGET_PLATFORM=${TARGET_PLATFORM:-linux/loong64}
 BUNDLE_DIR=${BUNDLE_DIR:-}
 ARCHIVE_PATH=${ARCHIVE_PATH:-}
 EXTRACT_ROOT=${EXTRACT_ROOT:-}
-APT_PACKAGES=${APT_PACKAGES:-ca-certificates libssl3t64}
+APT_PACKAGES=${APT_PACKAGES:-ca-certificates libcap2 libssl3t64}
 CODEX_ARGS=${CODEX_ARGS:---version}
 
 if [[ -z "${CONTAINER_ENGINE:-}" ]]; then
@@ -69,8 +69,20 @@ if [[ ! -x "$BUNDLE_DIR/bin/codex" ]]; then
   echo "missing codex binary: $BUNDLE_DIR/bin/codex" >&2
   exit 1
 fi
+if [[ ! -x "$BUNDLE_DIR/bin/codex-code-mode-host" ]]; then
+  echo "missing code-mode host binary: $BUNDLE_DIR/bin/codex-code-mode-host" >&2
+  exit 1
+fi
+if [[ ! -x "$BUNDLE_DIR/bin/codex-responses-api-proxy" ]]; then
+  echo "missing responses API proxy binary: $BUNDLE_DIR/bin/codex-responses-api-proxy" >&2
+  exit 1
+fi
+if [[ ! -x "$BUNDLE_DIR/codex-resources/bwrap" ]]; then
+  echo "missing bundled bwrap binary: $BUNDLE_DIR/codex-resources/bwrap" >&2
+  exit 1
+fi
 
-container_cmd='apt-get update >/tmp/apt-update.log 2>&1 && apt-get install -y '"$APT_PACKAGES"' >/tmp/apt-install.log 2>&1 && /work/bin/codex '"$CODEX_ARGS"
+container_cmd='apt-get update >/tmp/apt-update.log 2>&1 && apt-get install -y '"$APT_PACKAGES"' >/tmp/apt-install.log 2>&1 && /work/bin/codex '"$CODEX_ARGS"' && /work/bin/codex-responses-api-proxy --help >/tmp/codex-responses-api-proxy-help.log && /work/codex-resources/bwrap --help >/tmp/bwrap-help.log && /work/bin/codex-code-mode-host </dev/null >/tmp/codex-code-mode-host-smoke.log'
 
 case "$CONTAINER_ENGINE" in
   docker)
