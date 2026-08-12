@@ -1,9 +1,9 @@
 diff --git a/.github/workflows/loongarch64-release.yml b/.github/workflows/loongarch64-release.yml
 new file mode 100644
-index 000000000..98fc52578
+index 000000000..cc9018b52
 --- /dev/null
 +++ b/.github/workflows/loongarch64-release.yml
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,383 @@
 +name: loongarch64-release
 +
 +on:
@@ -197,6 +197,42 @@ index 000000000..98fc52578
 +          sudo env SYSROOT="${sysroot_dir}" upstream/fork_patches/scripts/prepare_debian13_loongarch64_sysroot.sh
 +          sudo chown -R "$(id -u):$(id -g)" "${sysroot_dir}"
 +          echo "SYSROOT=${sysroot_dir}" >> "$GITHUB_ENV"
++
++      - name: Configure rusty_v8 artifact overrides
++        shell: bash
++        run: |
++          set -euo pipefail
++
++          v8_version="$(
++            sed -n 's/^v8 = "=\([^"]*\)"/\1/p' upstream/codex-rs/Cargo.toml | head -n 1
++          )"
++          if [[ -z "${v8_version}" ]]; then
++            echo "cannot determine v8 version from upstream/codex-rs/Cargo.toml" >&2
++            exit 1
++          fi
++
++          release_tag="v${v8_version}"
++          base_url="${RUSTY_V8_MIRROR}/${release_tag}"
++          artifact_dir="${RUNNER_TEMP}/rusty_v8"
++          archive_name="librusty_v8_release_${TARGET}.a.gz"
++          binding_name="src_binding_release_${TARGET}.rs"
++          checksums_name="SHA256SUMS"
++
++          mkdir -p "${artifact_dir}"
++          curl -fsSL "${base_url}/${archive_name}" -o "${artifact_dir}/${archive_name}"
++          curl -fsSL "${base_url}/${binding_name}" -o "${artifact_dir}/${binding_name}"
++          curl -fsSL "${base_url}/${checksums_name}" -o "${artifact_dir}/${checksums_name}"
++
++          grep -F "  ${archive_name}" "${artifact_dir}/${checksums_name}" > "${artifact_dir}/checksums.selected"
++          grep -F "  ${binding_name}" "${artifact_dir}/${checksums_name}" >> "${artifact_dir}/checksums.selected"
++          if [[ "$(wc -l < "${artifact_dir}/checksums.selected")" -ne 2 ]]; then
++            echo "expected checksums for ${archive_name} and ${binding_name}" >&2
++            exit 1
++          fi
++          (cd "${artifact_dir}" && sha256sum -c checksums.selected)
++
++          echo "RUSTY_V8_ARCHIVE=${artifact_dir}/${archive_name}" >> "$GITHUB_ENV"
++          echo "RUSTY_V8_SRC_BINDING_PATH=${artifact_dir}/${binding_name}" >> "$GITHUB_ENV"
 +
 +      - name: Cross-build Codex binaries
 +        shell: bash

@@ -42,7 +42,9 @@ The build script assumes:
 - a LoongArch64 LLVM toolchain is installed locally
 - a Debian 13 `loong64` sysroot is available locally
 - the LoongArch64 `rusty_v8` release assets are available via
-  `RUSTY_V8_MIRROR`
+  `RUSTY_V8_MIRROR`; the workflow downloads them and sets
+  `RUSTY_V8_ARCHIVE` / `RUSTY_V8_SRC_BINDING_PATH` so the `v8` crate uses the
+  fork assets instead of inferring upstream asset names
 
 Override paths with environment variables when needed.
 
