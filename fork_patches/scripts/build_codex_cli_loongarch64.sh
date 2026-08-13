@@ -16,6 +16,7 @@ RUSTY_V8_MIRROR=${RUSTY_V8_MIRROR:-https://github.com/zarraxx/rusty_v8/releases/
 BUILD_LOG=${BUILD_LOG:-"/tmp/codex-loongarch64-cargo-build-$(date -u +%Y%m%dT%H%M%SZ).log"}
 BINARIES=${BINARIES:-"codex codex-code-mode-host codex-responses-api-proxy bwrap"}
 STRIP_BIN=${STRIP_BIN:-"$LLVM_TOOLCHAIN_ROOT/bin/$TARGET-strip"}
+PATCHELF_BIN=${PATCHELF_BIN:-patchelf}
 
 LLVM_LINKER_WRAPPER="$REPO_ROOT/fork_patches/scripts/loongarch64-clang-linker.sh"
 if [[ "$TOOLCHAIN_KIND" == "llvm" ]]; then
@@ -176,6 +177,10 @@ if [[ "$build_bwrap" == "true" ]]; then
     echo "missing strip tool: $STRIP_BIN" >&2
     exit 1
   fi
+  if ! command -v "$PATCHELF_BIN" >/dev/null 2>&1; then
+    echo "missing patchelf: $PATCHELF_BIN" >&2
+    exit 1
+  fi
   bwrap_args=(build --target "$TARGET" -vv --bin bwrap)
   if [[ "$PROFILE" == "release" ]]; then
     bwrap_args+=(--release)
@@ -189,6 +194,7 @@ if [[ "$build_bwrap" == "true" ]]; then
     exit 1
   fi
   "$STRIP_BIN" --strip-debug --strip-unneeded "$bwrap_path"
+  "$PATCHELF_BIN" --set-rpath '$ORIGIN/../lib' "$bwrap_path"
   export CODEX_BWRAP_SHA256
   CODEX_BWRAP_SHA256="$(sha256sum "$bwrap_path" | awk '{print $1}')"
   echo "built bwrap: $bwrap_path"
