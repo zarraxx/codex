@@ -214,17 +214,24 @@ index 000000000..cc9018b52
 +          release_tag="v${v8_version}"
 +          base_url="${RUSTY_V8_MIRROR}/${release_tag}"
 +          artifact_dir="${RUNNER_TEMP}/rusty_v8"
-+          archive_name="librusty_v8_release_${TARGET}.a.gz"
-+          binding_name="src_binding_release_${TARGET}.rs"
-+          checksums_name="SHA256SUMS"
++          archive_name="librusty_v8_ptrcomp_sandbox_release_${TARGET}.a.gz"
++          binding_name="src_binding_ptrcomp_sandbox_release_${TARGET}.rs"
++          checksums_name="SHA256SUMS-ptrcomp-sandbox-${TARGET}"
 +
 +          mkdir -p "${artifact_dir}"
 +          curl -fsSL "${base_url}/${archive_name}" -o "${artifact_dir}/${archive_name}"
 +          curl -fsSL "${base_url}/${binding_name}" -o "${artifact_dir}/${binding_name}"
 +          curl -fsSL "${base_url}/${checksums_name}" -o "${artifact_dir}/${checksums_name}"
 +
-+          grep -F "  ${archive_name}" "${artifact_dir}/${checksums_name}" > "${artifact_dir}/checksums.selected"
-+          grep -F "  ${binding_name}" "${artifact_dir}/${checksums_name}" >> "${artifact_dir}/checksums.selected"
++          awk -v archive_name="${archive_name}" -v binding_name="${binding_name}" '
++            {
++              asset_name = $2
++              sub(/^.*\//, "", asset_name)
++              if (asset_name == archive_name || asset_name == binding_name) {
++                print $1 "  " asset_name
++              }
++            }
++          ' "${artifact_dir}/${checksums_name}" > "${artifact_dir}/checksums.selected"
 +          if [[ "$(wc -l < "${artifact_dir}/checksums.selected")" -ne 2 ]]; then
 +            echo "expected checksums for ${archive_name} and ${binding_name}" >&2
 +            exit 1

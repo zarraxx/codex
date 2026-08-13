@@ -27,8 +27,11 @@
 **Files:**
 - Modify: `fork_patches/scripts/build_codex_cli_loongarch64.sh`
 - Create: `fork_patches/scripts/tests/build_codex_cli_loongarch64_test.sh`
+- Modify: `.github/workflows/loongarch64-release.yml`
+- Modify: `fork_patches/workflows/0001-add-loongarch64-release-workflow.patch`
 
 - [ ] Review the focused diff and commit it.
 - [ ] Push `main` to the fork.
 - [ ] Dispatch `loongarch64-release.yml` for `rust-v0.147.0` with release publishing enabled.
+- [ ] Use the `ptrcomp_sandbox` rusty_v8 pair required by `code-mode-runtime` and verify it against the target-specific checksum manifest.
 - [ ] Monitor the workflow through build, smoke test, and publication.
