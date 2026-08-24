@@ -386,5 +386,5 @@ jobs:
           body_path: ${{ runner.temp }}/release-notes.md
           files: dist/*
           overwrite_files: true
-          make_latest: false
+          make_latest: true
           prerelease: false
